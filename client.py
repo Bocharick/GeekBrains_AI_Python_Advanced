@@ -1,22 +1,19 @@
 import yaml
-import sys
-from argparse import ArgumentParser
-import os
-import socket
 import json
+import socket
+from datetime import datetime
+from argparse import ArgumentParser
 
 
-
-
-def make_request(text):
+def make_request(action, text, date=datetime.now()):
     return {
-        "data": text
+        'action': action,
+        'data': text,
+        'time': date.timestamp()
     }
 
 
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     config = {
         'host': 'localhost',
         'port': 8000,
@@ -24,21 +21,19 @@ if __name__ == "__main__":
     }
 
     parser = ArgumentParser()
-
-    parser.add_argument('-c', '--config', type=str, required=False, help="Sets config path")
-    parser.add_argument('-ht', '--host', type=str, required=False, help='Sets server host')
-    parser.add_argument('-p', '--port', type=str, required=False, help='Sets server port')
+    parser.add_argument('-c', '--config', type=str, required=False,
+                        help='Sets config path')
+    parser.add_argument('-ht', '--host', type=str, required=False,
+                        help='Sets server host')
+    parser.add_argument('-p', '--port', type=str, required=False,
+                        help='Sets server port')
 
     args = parser.parse_args()
 
     if args.config:
-        if os.path.isfile(args.config):
-            with open(args.config) as file:
-                file_config = yaml.safe_load(file)
-                config.update(file_config or {})
-        else:
-            print(f'{args.config} is not a file')
-            exit()
+        with open(args.config) as file:
+            file_config = yaml.safe_load(file)
+            config.update(file_config or {})
 
     host = args.host if args.host else config.get('host')
     port = args.port if args.port else config.get('port')
@@ -47,13 +42,16 @@ if __name__ == "__main__":
     sock = socket.socket()
     sock.connect((host, port))
 
+    action = input('Enter action name: ')
     message = input('Enter your message: ')
-    request = make_request(message)
+
+    request = make_request(action, message)
     string_request = json.dumps(request)
 
     sock.send(string_request.encode())
     bytes_response = sock.recv(buffersize)
 
     response = json.loads(bytes_response)
-
     print(response)
+
+    sock.close()
