@@ -1,10 +1,12 @@
 import yaml
 import json
 import socket
+import select
 import logging
 from argparse import ArgumentParser
 from resolvers import find_server_action
 from protocol import validate_request, make_200, make_500, make_400, make_404
+from handlers import handle_tcp_request
 
 config = {
     'host': 'localhost',
@@ -40,52 +42,44 @@ logging.basicConfig(
     )
 )
 
-
+requests = []
+connections = []
 
 try:
-    sock = socket.socket()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind((host, port))
+    # sock.setblocking(False)
+    # В винде sock.setblocking(False) скорее всего не работает, и можно его заменить командой sock.settimeout(1)
+    sock.settimeout(1)
     sock.listen(5)
 
-    # print(f'Server started with {host}:{port}')
     logging.info(f'Server started with {host}:{port}')
-
 
     action_mapping = find_server_action()
 
     while True:
-        client, (client_host, client_port) = sock.accept()
-        # print(f'Client {client_host}:{client_port} was connected')
-        logging.info(f'Client {client_host}:{client_port} was connected')
+        try:
+            client, (client_host, client_port) = sock.accept()
+            logging.info(f'Client {client_host}:{client_port} was connected')
+            connections.append(client)
+        except Exception as e:
+            pass
 
-        bytes_request = client.recv(buffersize)
+        if connections:
+            rlist, wlist, xlist = select.select(
+                connections, connections, connections, 0
+            )
 
-        request = json.loads(bytes_request)
+            for read_client in rlist:
+                bytes_request = client.recv(buffersize)
+                requests.append(bytes_request)
 
-        if validate_request(request):
-            action = request.get('action')
-            controller = action_mapping.get(action)
-            if controller:
-                try:
-                    response = controller(request)
-                    # print(f'Request: {bytes_request.decode()}')
-                    logging.debug(f'Request: {bytes_request.decode()}')
-                except Exception as err:
-                    response = make_500(request)
-                    # print(err)
-                    logging.critical(err)
-            else:
-                response = make_404(request)
-                logging.error(f'Action with name {action} not found')
-        else:
-            response = make_404(request, 'Request is not valid')
-            # print(f'Wrong request: {request}')
-            logging.error(f'Wrong request: {request}')
+            if requests:
+                bytes_request = requests.pop()
+                bytes_response = handle_tcp_request(bytes_request, action_mapping)
 
-        string_response = json.dumps(response)
-        client.send(string_response.encode())
-        client.close()
+                for write_client in wlist:
+                    write_client.send(bytes_response)
 
 except KeyboardInterrupt:
-    # print('Server shutdown')
     logging.info('Server shutdown')
