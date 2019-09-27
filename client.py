@@ -1,8 +1,13 @@
 import yaml
+import zlib
 import json
 import socket
+import threading
 from datetime import datetime
 from argparse import ArgumentParser
+
+READ_MODE = 'r'
+WRITE_MODE = 'w'
 
 
 def make_request(action, text, date=datetime.now()):
@@ -11,6 +16,21 @@ def make_request(action, text, date=datetime.now()):
         'data': text,
         'time': date.timestamp()
     }
+
+
+
+
+
+
+def read(sock, buffersize):
+    while True:
+        compressed_response = sock.recv(buffersize)
+        bytes_response = zlib.decompress(compressed_response)
+        response = json.loads(bytes_response)
+        print(compressed_response)
+        print(response)
+
+
 
 
 if __name__ == '__main__':
@@ -39,19 +59,22 @@ if __name__ == '__main__':
     port = args.port if args.port else config.get('port')
     buffersize = config.get('buffersize')
 
-    sock = socket.socket()
-    sock.connect((host, port))
+    try:
 
-    action = input('Enter action name: ')
-    message = input('Enter your message: ')
+        sock = socket.socket()
+        sock.connect((host, port))
 
-    request = make_request(action, message)
-    string_request = json.dumps(request)
+        read_thread = threading.Thread(target=read, args=(sock, buffersize))
+        read_thread.start()
 
-    sock.send(string_request.encode())
-    bytes_response = sock.recv(buffersize)
+        while True:
+            action = input('Enter action name: ')
+            message = input('Enter your message: ')
 
-    response = json.loads(bytes_response)
-    print(response)
-
-    sock.close()
+            request = make_request(action, message)
+            string_request = json.dumps(request)
+            bytes_request = string_request.encode()
+            compressed_request = zlib.compress(bytes_request)
+            sock.send(compressed_request)
+    except KeyboardInterrupt:
+        print('Client shutdown')
